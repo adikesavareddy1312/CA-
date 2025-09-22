@@ -4,12 +4,14 @@
   <meta charset="UTF-8">
   <title>Adaptive Traffic Control 3D</title>
   <style>
-    body { margin: 0; overflow: hidden; }
+    body { margin: 0; overflow: hidden; background: #87ceeb; }
     canvas { display: block; }
   </style>
 </head>
 <body>
 <script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/loaders/FontLoader.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/examples/jsm/geometries/TextGeometry.js"></script>
 <script>
 // Scene setup
 const scene = new THREE.Scene();
@@ -18,14 +20,20 @@ const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Road (gray plane)
-const roadGeometry = new THREE.PlaneGeometry(20, 20);
-const roadMaterial = new THREE.MeshBasicMaterial({color: 0x333333, side: THREE.DoubleSide});
-const road = new THREE.Mesh(roadGeometry, roadMaterial);
-road.rotation.x = -Math.PI / 2;
-scene.add(road);
+// Create crossroad (two intersecting planes)
+function createRoad(width, height, x, z, rotation=0) {
+  const geom = new THREE.PlaneGeometry(width, height);
+  const mat = new THREE.MeshBasicMaterial({color: 0x333333, side: THREE.DoubleSide});
+  const mesh = new THREE.Mesh(geom, mat);
+  mesh.rotation.x = -Math.PI/2;
+  mesh.rotation.z = rotation;
+  mesh.position.set(x, 0, z);
+  scene.add(mesh);
+}
+createRoad(20, 6, 0, 0);  // horizontal
+createRoad(6, 20, 0, 0);  // vertical
 
-// Traffic lights (poles + lights)
+// Traffic lights
 function createTrafficLight(x, z) {
   const group = new THREE.Group();
 
@@ -47,53 +55,100 @@ function createTrafficLight(x, z) {
   return light;
 }
 
-const light1 = createTrafficLight(-5, 5);
-const light2 = createTrafficLight(5, -5);
+const light1 = createTrafficLight(-4, 3);
+const light2 = createTrafficLight(4, -3);
 
-// Cars (small colored boxes)
-function createCar(x, z, color) {
+// Car creation
+function createCar(x, z, dir) {
   const car = new THREE.Mesh(
     new THREE.BoxGeometry(1, 0.5, 2),
-    new THREE.MeshBasicMaterial({color: color})
+    new THREE.MeshBasicMaterial({color: Math.random() * 0xffffff})
   );
   car.position.set(x, 0.25, z);
+  car.userData = {dir: dir};
   scene.add(car);
   return car;
 }
 
-let carsLane1 = [createCar(-10, 5, 0x00ff00), createCar(-13, 5, 0x0000ff)];
-let carsLane2 = [createCar(10, -5, 0xffff00)];
+let carsLane1 = [];
+let carsLane2 = [];
 
-camera.position.set(0, 15, 20);
-camera.lookAt(0,0,0);
+// Text labels for counts and timers
+const loader = new THREE.FontLoader();
+let font;
+loader.load('https://threejs.org/examples/fonts/helvetiker_regular.typeface.json', function(f) {
+  font = f;
+});
 
-// Adaptive light logic
+function createText(message, x, y, z) {
+  if (!font) return null;
+  const geometry = new THREE.TextGeometry(message, {
+    font: font,
+    size: 0.5,
+    height: 0.05,
+  });
+  const material = new THREE.MeshBasicMaterial({color: 0xffffff});
+  const mesh = new THREE.Mesh(geometry, material);
+  mesh.position.set(x, y, z);
+  scene.add(mesh);
+  return mesh;
+}
+
 let timer = 0;
 let greenForLane1 = true;
+let countdown = 10;
+let textLane1, textLane2;
 
-function updateTrafficLights() {
+camera.position.set(0, 20, 25);
+camera.lookAt(0, 0, 0);
+
+// Update traffic lights + cars
+function updateTraffic() {
   if (greenForLane1) {
-    light1.material.color.set(0x00ff00); // green
-    light2.material.color.set(0xff0000); // red
-    carsLane1.forEach(car => car.position.x += 0.05);
+    light1.material.color.set(0x00ff00);
+    light2.material.color.set(0xff0000);
+    carsLane1.forEach(car => { car.position.x += 0.1; });
   } else {
     light1.material.color.set(0xff0000);
     light2.material.color.set(0x00ff00);
-    carsLane2.forEach(car => car.position.x -= 0.05);
+    carsLane2.forEach(car => { car.position.x -= 0.1; });
   }
 }
 
+// Spawn cars randomly
+function spawnCars() {
+  if (Math.random() < 0.02) carsLane1.push(createCar(-12, 3, 'right'));
+  if (Math.random() < 0.02) carsLane2.push(createCar(12, -3, 'left'));
+}
+
+// Update countdown and switch lights
+function updateTimer() {
+  timer++;
+  if (timer % 60 === 0) { // 1 second (assuming ~60fps)
+    countdown--;
+  }
+  if (countdown <= 0) {
+    greenForLane1 = carsLane1.length >= carsLane2.length;
+    countdown = greenForLane1 ? 10 + carsLane1.length : 10 + carsLane2.length;
+  }
+}
+
+// Animate
 function animate() {
   requestAnimationFrame(animate);
+  spawnCars();
+  updateTimer();
+  updateTraffic();
 
-  timer++;
-  if (timer > 300) {
-    // Adaptive switch: longer green if more cars in lane
-    greenForLane1 = carsLane1.length >= carsLane2.length;
-    timer = 0;
+  // Remove old text
+  if (textLane1) scene.remove(textLane1);
+  if (textLane2) scene.remove(textLane2);
+
+  if (font) {
+    textLane1 = createText(`Cars: ${carsLane1.length} | T: ${countdown}`, -6, 4, 3);
+    textLane2 = createText(`Cars: ${carsLane2.length} | T: ${countdown}`, 2, 4, -3);
   }
 
-  updateTrafficLights();
   renderer.render(scene, camera);
 }
 
