@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Adaptive Traffic Control 3D</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<script src="https://cdn.jsdelivr.net/npm/three@0.152.2/build/three.min.js"></script>
+<script>
+// Scene setup
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth/window.innerHeight, 0.1, 1000);
+const renderer = new THREE.WebGLRenderer();
+renderer.setSize(window.innerWidth, window.innerHeight);
+document.body.appendChild(renderer.domElement);
+
+// Road (gray plane)
+const roadGeometry = new THREE.PlaneGeometry(20, 20);
+const roadMaterial = new THREE.MeshBasicMaterial({color: 0x333333, side: THREE.DoubleSide});
+const road = new THREE.Mesh(roadGeometry, roadMaterial);
+road.rotation.x = -Math.PI / 2;
+scene.add(road);
+
+// Traffic lights (poles + lights)
+function createTrafficLight(x, z) {
+  const group = new THREE.Group();
+
+  const pole = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.1, 0.1, 3),
+    new THREE.MeshBasicMaterial({color: 0x000000})
+  );
+  pole.position.set(x, 1.5, z);
+  group.add(pole);
+
+  const light = new THREE.Mesh(
+    new THREE.SphereGeometry(0.3, 16, 16),
+    new THREE.MeshBasicMaterial({color: 0xff0000})
+  );
+  light.position.set(x, 3, z);
+  group.add(light);
+
+  scene.add(group);
+  return light;
+}
+
+const light1 = createTrafficLight(-5, 5);
+const light2 = createTrafficLight(5, -5);
+
+// Cars (small colored boxes)
+function createCar(x, z, color) {
+  const car = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 0.5, 2),
+    new THREE.MeshBasicMaterial({color: color})
+  );
+  car.position.set(x, 0.25, z);
+  scene.add(car);
+  return car;
+}
+
+let carsLane1 = [createCar(-10, 5, 0x00ff00), createCar(-13, 5, 0x0000ff)];
+let carsLane2 = [createCar(10, -5, 0xffff00)];
+
+camera.position.set(0, 15, 20);
+camera.lookAt(0,0,0);
+
+// Adaptive light logic
+let timer = 0;
+let greenForLane1 = true;
+
+function updateTrafficLights() {
+  if (greenForLane1) {
+    light1.material.color.set(0x00ff00); // green
+    light2.material.color.set(0xff0000); // red
+    carsLane1.forEach(car => car.position.x += 0.05);
+  } else {
+    light1.material.color.set(0xff0000);
+    light2.material.color.set(0x00ff00);
+    carsLane2.forEach(car => car.position.x -= 0.05);
+  }
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+
+  timer++;
+  if (timer > 300) {
+    // Adaptive switch: longer green if more cars in lane
+    greenForLane1 = carsLane1.length >= carsLane2.length;
+    timer = 0;
+  }
+
+  updateTrafficLights();
+  renderer.render(scene, camera);
+}
+
+animate();
+</script>
+</body>
+</html>
